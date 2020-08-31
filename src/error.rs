@@ -3,7 +3,8 @@ use std::fmt;
 
 #[derive(Debug, Copy, Clone)]
 pub enum ErrorKind {
-    InvalidInput,
+    InvalidCommand,
+    InvalidTarget,
     IO,
     UserExit,
     Other,
@@ -16,7 +17,7 @@ pub struct RBError {
 }
 
 impl RBError {
-    pub fn new<E>(kind: ErrorKind, source_error: E) -> RBError
+    pub fn new_with_source<E>(kind: ErrorKind, source_error: E) -> RBError
     where
         E: Into<Box<dyn Error + 'static>>,
     {
@@ -25,6 +26,14 @@ impl RBError {
             source_error: Some(source_error.into()),
         }
     }
+
+    pub fn new(kind: ErrorKind) -> RBError {
+        RBError {
+            kind,
+            source_error: None,
+        }
+    }
+
     pub fn kind(&self) -> ErrorKind {
         self.kind
     }
