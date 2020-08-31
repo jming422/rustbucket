@@ -1,0 +1,17 @@
+[package]
+name = "rustbucket"
+version = "0.0.1"
+edition = "2018"
+authors = ["Jonathan Ming <jming422@gmail.com>"]
+description = "Navigate AWS S3 buckets in an FTP-like, greppable CLI"
+repository = "https://github.com/jming422/rustbucket.git"
+readme = "README.md"
+keywords = ["s3", "cli"]
+categories = ["command-line-utilities"]
+license = "GPL-3.0-or-later"
+
+[badges]
+maintenance = { status = "experimental" }
+
+[dependencies]
+clap = "2.33.3"

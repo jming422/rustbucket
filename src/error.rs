@@ -1,0 +1,43 @@
+use std::error::Error;
+use std::fmt;
+
+#[derive(Debug, Copy, Clone)]
+pub enum ErrorKind {
+    InvalidInput,
+    IO,
+    UserExit,
+    Other,
+}
+
+#[derive(Debug)]
+pub struct RBError {
+    kind: ErrorKind,
+    source_error: Option<Box<dyn Error + 'static>>,
+}
+
+impl RBError {
+    pub fn new<E>(kind: ErrorKind, source_error: E) -> RBError
+    where
+        E: Into<Box<dyn Error + 'static>>,
+    {
+        RBError {
+            kind,
+            source_error: Some(source_error.into()),
+        }
+    }
+    pub fn kind(&self) -> ErrorKind {
+        self.kind
+    }
+}
+
+impl fmt::Display for RBError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl Error for RBError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        self.source_error.as_ref().map(|b| b.as_ref())
+    }
+}
