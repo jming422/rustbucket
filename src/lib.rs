@@ -3,6 +3,8 @@ pub mod error;
 use crate::error::{ErrorKind, RBError};
 
 use std::io::{stdin, stdout, Write};
+use std::iter::Peekable;
+use std::str::SplitWhitespace;
 
 #[derive(Debug)]
 pub struct Config<'a> {
@@ -10,23 +12,72 @@ pub struct Config<'a> {
     pub single_command: Option<&'a str>,
 }
 
-#[derive(Debug, Copy, Clone)]
-enum Command<'a> {
+#[derive(Debug, Clone)]
+enum Command {
     ListDirectory,
-    ChangeDirectory(&'a str),
-    GetFile(&'a str),
-    PutFile(&'a str),
+    ChangeDirectory(String),
+    GetFile {
+        remote_source: String,
+        local_destination: String,
+    },
+    PutFile {
+        local_source: String,
+        remote_destination: String,
+    },
 }
 
+fn warn_if_more_words(mut words: Peekable<SplitWhitespace>) {
+    if words.peek().is_some() {
+        let extra_words = words.count();
+        println!(
+            "Command doesn't take any more arguments, but {} more were given; ignoring them.",
+            extra_words
+        );
+    }
+}
+
+// todo: non-cd commands don't support paths with spaces; none of the commands support quoted or escaped arguments to
+// deal with the spaces problem
 fn parse_command(cmd_str: &str) -> Result<Command, RBError> {
-    // todo impl this for real
-    let trimmed = cmd_str.trim();
-    if trimmed == "exit" {
-        Err(RBError::new(ErrorKind::UserExit))
-    } else if trimmed == "ls" {
-        Ok(Command::ListDirectory)
-    } else {
-        Err(RBError::new(ErrorKind::InvalidCommand))
+    let trimmed_lower = cmd_str.trim().to_lowercase();
+    let mut words = trimmed_lower.split_whitespace().peekable();
+
+    match words.next().unwrap_or("invalid") {
+        "exit" | "quit" => {
+            warn_if_more_words(words);
+            Err(RBError::new(ErrorKind::UserExit))
+        }
+        "ls" | "dir" => {
+            warn_if_more_words(words);
+            Ok(Command::ListDirectory)
+        }
+        "cd" => match words.next() {
+            Some(next_word) => {
+                let rest_words = words.fold(next_word.to_owned(), |acc, word| acc + " " + word);
+                Ok(Command::ChangeDirectory(rest_words))
+            }
+            None => Err(RBError::new(ErrorKind::InvalidTarget)),
+        },
+        "get" => {
+            let source = words.next().ok_or(RBError::new(ErrorKind::InvalidTarget))?;
+            let destination = words.next().ok_or(RBError::new(ErrorKind::InvalidTarget))?;
+            warn_if_more_words(words);
+            Ok(Command::GetFile {
+                remote_source: source.to_owned(),
+                local_destination: destination.to_owned(),
+            })
+        }
+        "put" => {
+            let source = words.next().ok_or(RBError::new(ErrorKind::InvalidTarget))?;
+            let destination = words.next().ok_or(RBError::new(ErrorKind::InvalidTarget))?;
+            warn_if_more_words(words);
+            Ok(Command::PutFile {
+                local_source: source.to_owned(),
+                remote_destination: destination.to_owned(),
+            })
+        }
+        // todo: mget? mput?
+        _ => Err(RBError::new(ErrorKind::InvalidCommand)),
     }
 }
 
@@ -46,12 +97,14 @@ fn read_input() -> Result<String, RBError> {
 
 pub fn run(config: Config) -> Result<(), RBError> {
     if config.single_command.is_some() {
+        eprintln!("Not yet implemented!");
+        return Ok(());
+        // todo impl
         // println!(
         //     "{}",
         //     run_command(config.single_command.unwrap())?.unwrap_or("")
         // );
         // return Ok(());
-        // todo impl
     }
 
     loop {
