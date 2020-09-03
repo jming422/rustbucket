@@ -95,16 +95,29 @@ fn read_input() -> Result<String, RBError> {
     }
 }
 
+static INVALID_COMMAND_WARNING: &str = "Unknown command. For available commands,";
+static INVALID_TARGET_WARNING: &str = "Invalid argument(s) for this command";
+
 pub fn run(config: Config) -> Result<(), RBError> {
-    if config.single_command.is_some() {
-        eprintln!("Not yet implemented!");
-        return Ok(());
-        // todo impl
-        // println!(
-        //     "{}",
-        //     run_command(config.single_command.unwrap())?.unwrap_or("")
-        // );
-        // return Ok(());
+    if let Some(cmd_input) = config.single_command {
+        return match parse_command(cmd_input) {
+            Err(e) => match e.kind() {
+                ErrorKind::UserExit => Ok(()),
+                ErrorKind::InvalidCommand => {
+                    eprintln!("{} run with --help", INVALID_COMMAND_WARNING);
+                    Err(e)
+                }
+                ErrorKind::InvalidTarget => {
+                    eprintln!("{}", INVALID_TARGET_WARNING);
+                    Err(e)
+                }
+                _ => Err(e),
+            },
+            Ok(cmd) => {
+                println!("{}", run_command(&cmd)?.unwrap_or("ok"));
+                Ok(())
+            }
+        };
     }
 
     loop {
@@ -119,7 +132,11 @@ pub fn run(config: Config) -> Result<(), RBError> {
             match e.kind() {
                 ErrorKind::UserExit => break,
                 ErrorKind::InvalidCommand => {
-                    println!("Unknown command. For available commands type, \"help\"");
+                    println!("{} type \"help\"", INVALID_COMMAND_WARNING);
+                    continue;
+                }
+                ErrorKind::InvalidTarget => {
+                    println!("{}", INVALID_TARGET_WARNING);
                     continue;
                 }
                 _ => return Err(e),
@@ -130,7 +147,7 @@ pub fn run(config: Config) -> Result<(), RBError> {
         match run_command(&cmd) {
             Ok(s) => println!("{}", s.unwrap_or("ok")),
             Err(e) => match e.kind() {
-                ErrorKind::InvalidTarget => println!("Invalid target"),
+                ErrorKind::InvalidTarget => println!("{}", INVALID_TARGET_WARNING),
                 _ => return Err(e),
             },
         };
