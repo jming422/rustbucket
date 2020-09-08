@@ -2,9 +2,13 @@ pub mod error;
 
 use crate::error::{ErrorKind, RBError};
 
+use std::env::{current_dir, set_current_dir};
 use std::io::{stdin, stdout, Write};
 use std::iter::Peekable;
+use std::path::PathBuf;
 use std::str::SplitWhitespace;
+
+use path_clean::PathClean;
 
 #[derive(Debug)]
 pub struct Config<'a> {
@@ -14,8 +18,10 @@ pub struct Config<'a> {
 
 #[derive(Debug, Clone)]
 enum Command {
-    ListDirectory,
-    ChangeDirectory(String),
+    ListRemoteDirectory,
+    ListLocalDirectory,
+    ChangeRemoteDirectory(String),
+    ChangeLocalDirectory(String),
     GetFile {
         remote_source: String,
         local_destination: String,
@@ -49,12 +55,23 @@ fn parse_command(cmd_str: &str) -> Result<Command, RBError> {
         }
         "ls" | "dir" => {
             warn_if_more_words(words);
-            Ok(Command::ListDirectory)
+            Ok(Command::ListRemoteDirectory)
+        }
+        "lls" | "ldir" => {
+            warn_if_more_words(words);
+            Ok(Command::ListLocalDirectory)
         }
         "cd" => match words.next() {
             Some(next_word) => {
                 let rest_words = words.fold(next_word.to_owned(), |acc, word| acc + " " + word);
-                Ok(Command::ChangeDirectory(rest_words))
+                Ok(Command::ChangeRemoteDirectory(rest_words))
+            }
+            None => Err(RBError::new(ErrorKind::InvalidTarget)),
+        },
+        "lcd" => match words.next() {
+            Some(next_word) => {
+                let rest_words = words.fold(next_word.to_owned(), |acc, word| acc + " " + word);
+                Ok(Command::ChangeLocalDirectory(rest_words))
             }
             None => Err(RBError::new(ErrorKind::InvalidTarget)),
         },
@@ -81,9 +98,63 @@ fn parse_command(cmd_str: &str) -> Result<Command, RBError> {
     }
 }
 
-fn run_command<'a, 'b>(cmd: &'a Command) -> Result<Option<&'b str>, RBError> {
-    // todo impl
-    Ok(None)
+struct Runner {
+    local_cwd: PathBuf,
+    remote_cwd: PathBuf,
+}
+
+impl Runner {
+    fn run_command(&mut self, cmd: &Command) -> Result<Option<String>, RBError> {
+        match cmd {
+            Command::ListRemoteDirectory => {
+                // todo impl
+                Ok(None)
+            }
+            Command::ListLocalDirectory => {
+                // todo impl
+                Ok(None)
+            }
+            Command::ChangeRemoteDirectory(dir) => {
+                self.remote_cwd.push(dir);
+                self.remote_cwd = self.remote_cwd.clean();
+                Ok(Some(format!(
+                    "Remote directory is now: {}",
+                    self.remote_cwd.to_string_lossy()
+                )))
+            }
+            Command::ChangeLocalDirectory(dir) => {
+                let new_path = self.local_cwd.join(dir);
+                let canonical_path = new_path.canonicalize().and_then(|canonical_path| {
+                    set_current_dir(&canonical_path)?;
+                    Ok(canonical_path)
+                });
+                match canonical_path {
+                    Ok(good_new_path) => {
+                        self.local_cwd = good_new_path;
+                        Ok(Some(format!(
+                            "Local directory is now: {}",
+                            self.local_cwd.to_string_lossy()
+                        )))
+                    }
+                    Err(io_err) => Err(RBError::new_with_source(ErrorKind::IO, io_err)),
+                }
+            }
+            Command::GetFile {
+                local_destination,
+                remote_source,
+            } => {
+                // todo impl
+                Ok(None)
+            }
+            Command::PutFile {
+                local_source,
+                remote_destination,
+            } => {
+                // todo impl
+                Ok(None)
+            }
+        }
+    }
 }
 
 fn read_input() -> Result<String, RBError> {
@@ -99,6 +170,11 @@ static INVALID_COMMAND_WARNING: &str = "Unknown command. For available commands,
 static INVALID_TARGET_WARNING: &str = "Invalid argument(s) for this command";
 
 pub fn run(config: Config) -> Result<(), RBError> {
+    let mut runner = Runner {
+        local_cwd: current_dir().unwrap_or(PathBuf::from("~")),
+        remote_cwd: PathBuf::from("/"),
+    };
+
     if let Some(cmd_input) = config.single_command {
         return match parse_command(cmd_input) {
             Err(e) => match e.kind() {
@@ -114,7 +190,10 @@ pub fn run(config: Config) -> Result<(), RBError> {
                 _ => Err(e),
             },
             Ok(cmd) => {
-                println!("{}", run_command(&cmd)?.unwrap_or("ok"));
+                println!(
+                    "{}",
+                    runner.run_command(&cmd)?.unwrap_or(String::from("ok"))
+                );
                 Ok(())
             }
         };
@@ -144,8 +223,8 @@ pub fn run(config: Config) -> Result<(), RBError> {
         }
 
         let cmd = cmd_res.unwrap();
-        match run_command(&cmd) {
-            Ok(s) => println!("{}", s.unwrap_or("ok")),
+        match runner.run_command(&cmd) {
+            Ok(s) => println!("{}", s.unwrap_or(String::from("ok"))),
             Err(e) => match e.kind() {
                 ErrorKind::InvalidTarget => println!("{}", INVALID_TARGET_WARNING),
                 _ => return Err(e),
