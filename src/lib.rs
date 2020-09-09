@@ -121,9 +121,13 @@ impl Runner {
             }
             Command::ListLocalDirectory => read_dir(&self.local_cwd)
                 .and_then(|mut entries| {
-                    entries.try_fold(String::new(), |acc, entry_res| {
-                        Ok(acc + &entry_res?.file_name().to_string_lossy() + "\n")
-                    })
+                    let mut dirs: Vec<String> = Vec::new();
+                    entries.try_for_each(|entry_res| -> Result<(), io::Error> {
+                        dirs.push(entry_res?.file_name().to_string_lossy().into_owned());
+                        Ok(())
+                    })?;
+                    dirs.sort_unstable();
+                    Ok(dirs.join("\n"))
                 })
                 .map_err(|e| RBError::new_with_source(ErrorKind::IO, e)),
             Command::ChangeRemoteDirectory(dir) => {
