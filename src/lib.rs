@@ -3,7 +3,9 @@ pub mod error;
 use crate::error::{ErrorKind, RBError};
 
 use std::env::{current_dir, set_current_dir};
-use std::io::{stdin, stdout, Write};
+use std::fs::read_dir;
+use std::io;
+use std::io::Write;
 use std::iter::Peekable;
 use std::path::PathBuf;
 use std::str::SplitWhitespace;
@@ -11,9 +13,9 @@ use std::str::SplitWhitespace;
 use path_clean::PathClean;
 
 #[derive(Debug)]
-pub struct Config<'a> {
+pub struct Config {
     pub debug: bool,
-    pub single_command: Option<&'a str>,
+    pub single_command: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -44,8 +46,9 @@ fn warn_if_more_words(mut words: Peekable<SplitWhitespace>) {
 
 // todo: non-cd commands don't support paths with spaces; none of the commands support quoted or escaped arguments to
 // deal with the spaces problem
-fn parse_command(cmd_str: &str) -> Result<Command, RBError> {
-    let trimmed_lower = cmd_str.trim().to_lowercase();
+fn parse_command(cmd_str: String) -> Result<Command, RBError> {
+    let trimmed = cmd_str.trim();
+    let trimmed_lower = trimmed.to_lowercase();
     let mut words = trimmed_lower.split_whitespace().peekable();
 
     match words.next().unwrap_or("invalid") {
@@ -62,16 +65,22 @@ fn parse_command(cmd_str: &str) -> Result<Command, RBError> {
             Ok(Command::ListLocalDirectory)
         }
         "cd" => match words.next() {
-            Some(next_word) => {
-                let rest_words = words.fold(next_word.to_owned(), |acc, word| acc + " " + word);
-                Ok(Command::ChangeRemoteDirectory(rest_words))
+            Some(_) => {
+                let cmd_arg = trimmed
+                    .strip_prefix("cd ")
+                    .ok_or_else(|| RBError::new(ErrorKind::InvalidTarget))?
+                    .trim();
+                Ok(Command::ChangeRemoteDirectory(cmd_arg.to_owned()))
             }
             None => Err(RBError::new(ErrorKind::InvalidTarget)),
         },
         "lcd" => match words.next() {
-            Some(next_word) => {
-                let rest_words = words.fold(next_word.to_owned(), |acc, word| acc + " " + word);
-                Ok(Command::ChangeLocalDirectory(rest_words))
+            Some(_) => {
+                let cmd_arg = trimmed
+                    .strip_prefix("lcd ")
+                    .ok_or_else(|| RBError::new(ErrorKind::InvalidTarget))?
+                    .trim();
+                Ok(Command::ChangeLocalDirectory(cmd_arg.to_owned()))
             }
             None => Err(RBError::new(ErrorKind::InvalidTarget)),
         },
@@ -104,23 +113,26 @@ struct Runner {
 }
 
 impl Runner {
-    fn run_command(&mut self, cmd: &Command) -> Result<Option<String>, RBError> {
+    fn run_command(&mut self, cmd: &Command) -> Result<String, RBError> {
         match cmd {
             Command::ListRemoteDirectory => {
                 // todo impl
-                Ok(None)
+                Ok(String::from("ok"))
             }
-            Command::ListLocalDirectory => {
-                // todo impl
-                Ok(None)
-            }
+            Command::ListLocalDirectory => read_dir(&self.local_cwd)
+                .and_then(|mut entries| {
+                    entries.try_fold(String::new(), |acc, entry_res| {
+                        Ok(acc + &entry_res?.file_name().to_string_lossy() + "\n")
+                    })
+                })
+                .map_err(|e| RBError::new_with_source(ErrorKind::IO, e)),
             Command::ChangeRemoteDirectory(dir) => {
                 self.remote_cwd.push(dir);
                 self.remote_cwd = self.remote_cwd.clean();
-                Ok(Some(format!(
+                Ok(format!(
                     "Remote directory is now: {}",
                     self.remote_cwd.to_string_lossy()
-                )))
+                ))
             }
             Command::ChangeLocalDirectory(dir) => {
                 let new_path = self.local_cwd.join(dir);
@@ -131,12 +143,21 @@ impl Runner {
                 match canonical_path {
                     Ok(good_new_path) => {
                         self.local_cwd = good_new_path;
-                        Ok(Some(format!(
+                        Ok(format!(
                             "Local directory is now: {}",
                             self.local_cwd.to_string_lossy()
-                        )))
+                        ))
                     }
-                    Err(io_err) => Err(RBError::new_with_source(ErrorKind::IO, io_err)),
+                    Err(io_err) => match io_err.kind() {
+                        io::ErrorKind::NotFound => Ok(format!(
+                            "Directory not found: {}",
+                            new_path.to_string_lossy()
+                        )),
+                        io::ErrorKind::InvalidInput => {
+                            Ok(format!("Invalid path: {}", new_path.to_string_lossy()))
+                        }
+                        _ => Err(RBError::new_with_source(ErrorKind::IO, io_err)),
+                    },
                 }
             }
             Command::GetFile {
@@ -144,14 +165,14 @@ impl Runner {
                 remote_source,
             } => {
                 // todo impl
-                Ok(None)
+                Ok(String::from("ok"))
             }
             Command::PutFile {
                 local_source,
                 remote_destination,
             } => {
                 // todo impl
-                Ok(None)
+                Ok(String::from("ok"))
             }
         }
     }
@@ -160,7 +181,7 @@ impl Runner {
 fn read_input() -> Result<String, RBError> {
     let mut input = String::new();
 
-    match stdin().read_line(&mut input) {
+    match io::stdin().read_line(&mut input) {
         Ok(_) => Ok(input),
         Err(e) => Err(RBError::new_with_source(ErrorKind::IO, e)),
     }
@@ -190,10 +211,7 @@ pub fn run(config: Config) -> Result<(), RBError> {
                 _ => Err(e),
             },
             Ok(cmd) => {
-                println!(
-                    "{}",
-                    runner.run_command(&cmd)?.unwrap_or(String::from("ok"))
-                );
+                println!("{}", runner.run_command(&cmd)?);
                 Ok(())
             }
         };
@@ -201,12 +219,11 @@ pub fn run(config: Config) -> Result<(), RBError> {
 
     loop {
         print!("> ");
-        stdout()
+        io::stdout()
             .flush()
             .or_else(|io_err| Err(RBError::new_with_source(ErrorKind::IO, io_err)))?;
 
-        let input = read_input()?;
-        let cmd_res = parse_command(&input);
+        let cmd_res = parse_command(read_input()?);
         if let Err(e) = cmd_res {
             match e.kind() {
                 ErrorKind::UserExit => break,
@@ -224,7 +241,7 @@ pub fn run(config: Config) -> Result<(), RBError> {
 
         let cmd = cmd_res.unwrap();
         match runner.run_command(&cmd) {
-            Ok(s) => println!("{}", s.unwrap_or(String::from("ok"))),
+            Ok(s) => println!("{}", s),
             Err(e) => match e.kind() {
                 ErrorKind::InvalidTarget => println!("{}", INVALID_TARGET_WARNING),
                 _ => return Err(e),

@@ -38,7 +38,7 @@ fn main() {
 
     let conf = Config {
         debug: matches.is_present("debug"),
-        single_command: matches.value_of("command"),
+        single_command: matches.value_of("command").map(|s| s.to_owned()),
     };
 
     println!("rustbucket {}", crate_version!());
@@ -49,7 +49,7 @@ This is free software, and you are welcome to redistribute it.
     );
 
     match rustbucket::run(conf) {
-        Ok(_) => println!("Done."),
-        Err(e) => eprintln!("Error: {}", e),
+        Ok(_) => println!("Bye!"),
+        Err(e) => eprintln!("Crash: {}", e),
     };
 }
