@@ -22,6 +22,8 @@ pub struct Config {
 enum Command {
     ListRemoteDirectory,
     ListLocalDirectory,
+    PrintRemoteDirectory,
+    PrintLocalDirectory,
     ChangeRemoteDirectory(String),
     ChangeLocalDirectory(String),
     GetFile {
@@ -63,6 +65,14 @@ fn parse_command(cmd_str: String) -> Result<Command, RBError> {
         "lls" | "ldir" => {
             warn_if_more_words(words);
             Ok(Command::ListLocalDirectory)
+        }
+        "pwd" => {
+            warn_if_more_words(words);
+            Ok(Command::PrintRemoteDirectory)
+        }
+        "lpwd" => {
+            warn_if_more_words(words);
+            Ok(Command::PrintLocalDirectory)
         }
         "cd" => match words.next() {
             Some(_) => {
@@ -115,6 +125,14 @@ struct Runner {
 impl Runner {
     fn run_command(&mut self, cmd: &Command) -> Result<String, RBError> {
         match cmd {
+            Command::PrintRemoteDirectory => Ok(format!(
+                "Remote directory is now: {}",
+                self.remote_cwd.to_string_lossy()
+            )),
+            Command::PrintLocalDirectory => Ok(format!(
+                "Local directory is now: {}",
+                self.local_cwd.to_string_lossy()
+            )),
             Command::ListRemoteDirectory => {
                 // todo impl
                 Ok(String::from("ok"))
