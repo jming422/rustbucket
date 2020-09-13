@@ -7,7 +7,7 @@ use std::fs::read_dir;
 use std::io;
 use std::io::Write;
 use std::iter::Peekable;
-use std::path::PathBuf;
+use std::path::{Component, PathBuf};
 use std::str::SplitWhitespace;
 
 use path_clean::PathClean;
@@ -127,15 +127,36 @@ impl Runner {
         match cmd {
             Command::PrintRemoteDirectory => Ok(format!(
                 "Remote directory is now: {}",
-                self.remote_cwd.to_string_lossy()
+                self.remote_cwd.display()
             )),
             Command::PrintLocalDirectory => Ok(format!(
                 "Local directory is now: {}",
-                self.local_cwd.to_string_lossy()
+                self.local_cwd.display()
             )),
             Command::ListRemoteDirectory => {
-                // todo impl
-                Ok(String::from("ok"))
+                // we know the path is clean since we ran remote_cwd.clean() with the `cd` command
+                let mut components = self.remote_cwd.components();
+                let maybe_bucket = components
+                    .find_map(|c| match c {
+                        Component::Normal(bucket) => Some(Ok(bucket)),
+                        Component::ParentDir => Some(Err(RBError::new(ErrorKind::InvalidTarget))),
+                        Component::CurDir => Some(Err(RBError::new(ErrorKind::InvalidTarget))),
+                        _ => None,
+                    })
+                    .transpose()?;
+
+                match maybe_bucket {
+                    // The path in remote_cwd contains no Normal path components, so list all available buckets
+                    None => Ok(format!("TODO List all available buckets")),
+                    Some(bucket) => {
+                        let remaining_path = components.as_path();
+                        Ok(format!(
+                            "TODO list bucket {} with prefix {}",
+                            bucket.to_string_lossy(),
+                            remaining_path.display()
+                        ))
+                    }
+                }
             }
             Command::ListLocalDirectory => read_dir(&self.local_cwd)
                 .and_then(|mut entries| {
@@ -153,7 +174,7 @@ impl Runner {
                 self.remote_cwd = self.remote_cwd.clean();
                 Ok(format!(
                     "Remote directory is now: {}",
-                    self.remote_cwd.to_string_lossy()
+                    self.remote_cwd.display()
                 ))
             }
             Command::ChangeLocalDirectory(dir) => {
@@ -167,16 +188,15 @@ impl Runner {
                         self.local_cwd = good_new_path;
                         Ok(format!(
                             "Local directory is now: {}",
-                            self.local_cwd.to_string_lossy()
+                            self.local_cwd.display()
                         ))
                     }
                     Err(io_err) => match io_err.kind() {
-                        io::ErrorKind::NotFound => Ok(format!(
-                            "Directory not found: {}",
-                            new_path.to_string_lossy()
-                        )),
+                        io::ErrorKind::NotFound => {
+                            Ok(format!("Directory not found: {}", new_path.display()))
+                        }
                         io::ErrorKind::InvalidInput => {
-                            Ok(format!("Invalid path: {}", new_path.to_string_lossy()))
+                            Ok(format!("Invalid path: {}", new_path.display()))
                         }
                         _ => Err(RBError::new_with_source(ErrorKind::IO, io_err)),
                     },
