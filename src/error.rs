@@ -3,11 +3,12 @@ use std::fmt;
 
 #[derive(Debug, Copy, Clone)]
 pub enum ErrorKind {
+    IO,
     InvalidCommand,
     InvalidTarget,
-    IO,
-    UserExit,
     Other,
+    Readline,
+    UserExit,
 }
 
 #[derive(Debug)]

@@ -5,12 +5,12 @@ use crate::error::{ErrorKind, RBError};
 use std::env::{current_dir, set_current_dir};
 use std::fs::read_dir;
 use std::io;
-use std::io::Write;
 use std::iter::Peekable;
 use std::path::{Component, PathBuf};
 use std::str::SplitWhitespace;
 
 use path_clean::PathClean;
+use rustyline::error::ReadlineError;
 
 #[derive(Debug)]
 pub struct Config {
@@ -220,17 +220,45 @@ impl Runner {
     }
 }
 
-fn read_input() -> Result<String, RBError> {
-    let mut input = String::new();
-
-    match io::stdin().read_line(&mut input) {
-        Ok(_) => Ok(input),
-        Err(e) => Err(RBError::new_with_source(ErrorKind::IO, e)),
-    }
-}
-
 static INVALID_COMMAND_WARNING: &str = "Unknown command. For available commands,";
 static INVALID_TARGET_WARNING: &str = "Invalid argument(s) for this command";
+
+fn run_loop(rl: &mut rustyline::Editor<()>, mut runner: Runner) -> Result<(), RBError> {
+    loop {
+        match rl.readline("> ") {
+            Err(ReadlineError::Interrupted) => break,
+            Err(ReadlineError::Eof) => continue,
+            Err(e) => return Err(RBError::new_with_source(ErrorKind::IO, e)),
+            Ok(line) => {
+                let cmd_res = parse_command(line);
+                if let Err(e) = cmd_res {
+                    match e.kind() {
+                        ErrorKind::UserExit => break,
+                        ErrorKind::InvalidCommand => {
+                            println!("{} type \"help\"", INVALID_COMMAND_WARNING);
+                            continue;
+                        }
+                        ErrorKind::InvalidTarget => {
+                            println!("{}", INVALID_TARGET_WARNING);
+                            continue;
+                        }
+                        _ => return Err(e),
+                    };
+                }
+
+                let cmd = cmd_res.unwrap();
+                match runner.run_command(&cmd) {
+                    Ok(s) => println!("{}", s),
+                    Err(e) => match e.kind() {
+                        ErrorKind::InvalidTarget => println!("{}", INVALID_TARGET_WARNING),
+                        _ => return Err(e),
+                    },
+                };
+            }
+        };
+    }
+    Ok(())
+}
 
 pub fn run(config: Config) -> Result<(), RBError> {
     let mut runner = Runner {
@@ -238,6 +266,7 @@ pub fn run(config: Config) -> Result<(), RBError> {
         remote_cwd: PathBuf::from("/"),
     };
 
+    // Single command passed with flag
     if let Some(cmd_input) = config.single_command {
         return match parse_command(cmd_input) {
             Err(e) => match e.kind() {
@@ -259,37 +288,15 @@ pub fn run(config: Config) -> Result<(), RBError> {
         };
     }
 
-    loop {
-        print!("> ");
-        io::stdout()
-            .flush()
-            .or_else(|io_err| Err(RBError::new_with_source(ErrorKind::IO, io_err)))?;
+    // Interactive prompt mode
+    let mut rl = rustyline::Editor::<()>::new();
+    // if let Err(e) = rl.load_history(&history_path) {
+    //     println!("No previous history. (error: {})", e);
+    // }
+    let result = run_loop(&mut rl, runner);
+    // if let Err(e) = rl.save_history(&history_path) {
+    //     eprintln!("Error trying to save interactive prompt history: {}", e);
+    // }
 
-        let cmd_res = parse_command(read_input()?);
-        if let Err(e) = cmd_res {
-            match e.kind() {
-                ErrorKind::UserExit => break,
-                ErrorKind::InvalidCommand => {
-                    println!("{} type \"help\"", INVALID_COMMAND_WARNING);
-                    continue;
-                }
-                ErrorKind::InvalidTarget => {
-                    println!("{}", INVALID_TARGET_WARNING);
-                    continue;
-                }
-                _ => return Err(e),
-            };
-        }
-
-        let cmd = cmd_res.unwrap();
-        match runner.run_command(&cmd) {
-            Ok(s) => println!("{}", s),
-            Err(e) => match e.kind() {
-                ErrorKind::InvalidTarget => println!("{}", INVALID_TARGET_WARNING),
-                _ => return Err(e),
-            },
-        };
-    }
-
-    Ok(())
+    result
 }

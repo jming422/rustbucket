@@ -16,3 +16,4 @@ maintenance = { status = "experimental" }
 [dependencies]
 clap = "2.33.3"
 path-clean = "0.1.0"
+rustyline = "6.2.0"
