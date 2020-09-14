@@ -8,6 +8,7 @@ pub enum ErrorKind {
     InvalidTarget,
     Other,
     Readline,
+    S3,
     UserExit,
 }
 

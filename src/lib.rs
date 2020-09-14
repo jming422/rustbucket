@@ -1,6 +1,8 @@
 pub mod error;
+pub mod s3;
 
 use crate::error::{ErrorKind, RBError};
+use crate::s3::RBS3;
 
 use std::env::{current_dir, set_current_dir};
 use std::fs::read_dir;
@@ -120,10 +122,19 @@ fn parse_command(cmd_str: String) -> Result<Command, RBError> {
 struct Runner {
     local_cwd: PathBuf,
     remote_cwd: PathBuf,
+    s3: RBS3,
 }
 
 impl Runner {
-    fn run_command(&mut self, cmd: &Command) -> Result<String, RBError> {
+    fn new(local_cwd: PathBuf, remote_cwd: PathBuf) -> Self {
+        Runner {
+            local_cwd,
+            remote_cwd,
+            s3: RBS3::new(),
+        }
+    }
+
+    async fn run_command(&mut self, cmd: &Command) -> Result<String, RBError> {
         match cmd {
             Command::PrintRemoteDirectory => Ok(format!(
                 "Remote directory is now: {}",
@@ -147,14 +158,26 @@ impl Runner {
 
                 match maybe_bucket {
                     // The path in remote_cwd contains no Normal path components, so list all available buckets
-                    None => Ok(format!("TODO List all available buckets")),
+                    None => {
+                        let buckets = self.s3.list_buckets().await?;
+                        Ok(buckets.join("\n"))
+                    }
                     Some(bucket) => {
                         let remaining_path = components.as_path();
-                        Ok(format!(
-                            "TODO list bucket {} with prefix {}",
-                            bucket.to_string_lossy(),
-                            remaining_path.display()
-                        ))
+
+                        // to_str only returns None if the path is not valid unicode. Since we created and modified
+                        // these paths exclusively using the &str/String types, they are guaranteed to always be valid
+                        // unicode, so we can unwrap() them safely.
+                        let bucket_string = bucket.to_str().unwrap().to_owned();
+                        let prefix_str = remaining_path.to_str().unwrap();
+                        let prefix = if prefix_str.is_empty() {
+                            None
+                        } else {
+                            Some(prefix_str.to_owned())
+                        };
+
+                        let files = self.s3.list_files(bucket_string, prefix).await?;
+                        Ok(files.join("\n"))
                     }
                 }
             }
@@ -170,6 +193,7 @@ impl Runner {
                 })
                 .map_err(|e| RBError::new_with_source(ErrorKind::IO, e)),
             Command::ChangeRemoteDirectory(dir) => {
+                // TODO: use S3 to validate that the requested bucket and prefix path exist
                 self.remote_cwd.push(dir);
                 self.remote_cwd = self.remote_cwd.clean();
                 Ok(format!(
@@ -223,7 +247,7 @@ impl Runner {
 static INVALID_COMMAND_WARNING: &str = "Unknown command. For available commands,";
 static INVALID_TARGET_WARNING: &str = "Invalid argument(s) for this command";
 
-fn run_loop(rl: &mut rustyline::Editor<()>, mut runner: Runner) -> Result<(), RBError> {
+async fn run_loop(rl: &mut rustyline::Editor<()>, mut runner: Runner) -> Result<(), RBError> {
     loop {
         match rl.readline("> ") {
             Err(ReadlineError::Interrupted) => break,
@@ -247,9 +271,10 @@ fn run_loop(rl: &mut rustyline::Editor<()>, mut runner: Runner) -> Result<(), RB
                 }
 
                 let cmd = cmd_res.unwrap();
-                match runner.run_command(&cmd) {
+                match runner.run_command(&cmd).await {
                     Ok(s) => println!("{}", s),
                     Err(e) => match e.kind() {
+                        // TODO: Add better UX for "gracefully" handling S3 and IO error types
                         ErrorKind::InvalidTarget => println!("{}", INVALID_TARGET_WARNING),
                         _ => return Err(e),
                     },
@@ -260,11 +285,11 @@ fn run_loop(rl: &mut rustyline::Editor<()>, mut runner: Runner) -> Result<(), RB
     Ok(())
 }
 
-pub fn run(config: Config) -> Result<(), RBError> {
-    let mut runner = Runner {
-        local_cwd: current_dir().unwrap_or(PathBuf::from("~")),
-        remote_cwd: PathBuf::from("/"),
-    };
+pub async fn run(config: Config) -> Result<(), RBError> {
+    let mut runner = Runner::new(
+        current_dir().unwrap_or(PathBuf::from("~")),
+        PathBuf::from("/"),
+    );
 
     // Single command passed with flag
     if let Some(cmd_input) = config.single_command {
@@ -282,7 +307,9 @@ pub fn run(config: Config) -> Result<(), RBError> {
                 _ => Err(e),
             },
             Ok(cmd) => {
-                println!("{}", runner.run_command(&cmd)?);
+                // It's cool if this one has no error handling besides, "exit with the error," since it's running as a
+                // one-off command anyway
+                println!("{}", runner.run_command(&cmd).await?);
                 Ok(())
             }
         };
@@ -293,7 +320,7 @@ pub fn run(config: Config) -> Result<(), RBError> {
     // if let Err(e) = rl.load_history(&history_path) {
     //     println!("No previous history. (error: {})", e);
     // }
-    let result = run_loop(&mut rl, runner);
+    let result = run_loop(&mut rl, runner).await;
     // if let Err(e) = rl.save_history(&history_path) {
     //     eprintln!("Error trying to save interactive prompt history: {}", e);
     // }

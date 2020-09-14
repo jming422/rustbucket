@@ -20,7 +20,8 @@ use clap::*;
 
 use rustbucket::Config;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let matches = clap::app_from_crate!(", ")
         .arg(
             Arg::with_name("debug")
@@ -48,7 +49,7 @@ This is free software, and you are welcome to redistribute it.
 ",
     );
 
-    match rustbucket::run(conf) {
+    match rustbucket::run(conf).await {
         Ok(_) => println!("Bye!"),
         Err(e) => eprintln!("Crash: {}", e),
     };
