@@ -37,7 +37,7 @@ impl RBS3 {
     ) -> Result<Vec<String>, RBError> {
         let mut params = ListObjectsV2Request {
             bucket,
-            prefix,
+            prefix: prefix.clone(),
             delimiter: Some(String::from("/")),
             continuation_token: None,
             encoding_type: None,
@@ -48,6 +48,7 @@ impl RBS3 {
         };
 
         let mut results: Vec<String> = Vec::new();
+        let mut files: Vec<String> = Vec::new();
 
         loop {
             let output = self
@@ -56,25 +57,46 @@ impl RBS3 {
                 .await
                 .map_err(|err| RBError::new_with_source(ErrorKind::S3, err))?;
 
-            // TODO: Right now this only lists "common prefixes," analogous to directories, but it won't list files
-            // inside those directories. If I extend results with output.contents -> object.key instead of the code
-            // below however, it'll return all files in all directories. What I want is somewhere between the two: it
-            // should list all "directories" while also listing any files in the current "directory" that are not
-            // contained in any of the already-listed "directories." This is probably going to involve listing the
-            // common prefixes, then filtering the contents list so that objects whose `key` string includes one of the
-            // common prefixes are left out.
-
             if let Some(prefixes) = output.common_prefixes {
                 results.extend(prefixes.into_iter().filter_map(|object| object.prefix));
             }
 
+            if let Some(objects) = output.contents {
+                files.extend(
+                    objects
+                        .into_iter()
+                        .filter_map(|object| object.key)
+                        .filter_map(|key| {
+                            if let Some(pfx_str) = prefix.as_ref().map(|pfx| pfx.as_str()) {
+                                key.strip_prefix(pfx_str).and_then(|key_no_prefix| {
+                                    if !key_no_prefix.contains('/') {
+                                        Some(key_no_prefix.to_string())
+                                    } else {
+                                        None
+                                    }
+                                })
+                            } else if !key.contains('/') {
+                                Some(key)
+                            } else {
+                                None
+                            }
+                        }),
+                );
+            };
+
+            // It's convenient to not use if let Some() here because params.continuation_token is also an Option
             if output.next_continuation_token.is_some() {
                 params.continuation_token = output.next_continuation_token;
-            // don't break; we'll call the s3 function again with the new continuation token
+            // don't break; we'll loop and call the s3 function again with the new continuation token
             } else {
                 break;
             }
         }
+
+        // Do this stuff at the end so that all the directories appear at the top and the files at the bottom
+        results.sort_unstable();
+        files.sort_unstable();
+        results.extend(files);
 
         Ok(results)
     }

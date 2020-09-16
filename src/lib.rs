@@ -1,5 +1,5 @@
 pub mod error;
-pub mod s3;
+mod s3;
 
 use crate::error::{ErrorKind, RBError};
 use crate::s3::RBS3;
@@ -173,7 +173,7 @@ impl Runner {
                         let prefix = if prefix_str.is_empty() {
                             None
                         } else {
-                            Some(prefix_str.to_owned())
+                            Some(prefix_str.to_owned() + "/")
                         };
 
                         let files = self.s3.list_files(bucket_string, prefix).await?;
