@@ -48,11 +48,11 @@ impl S3Path {
                 let key = if key_str.is_empty() {
                     None
                 } else {
-                    Some(String::from("/") + key_str)
+                    Some(key_str.to_owned())
                 };
 
                 println!(
-                    "Debug; generated S3Path with bucket {:?} and key {:?}",
+                    "Debug: generated S3Path with bucket {:?} and key {:?}",
                     bucket, key
                 );
                 Ok(Self { bucket, key })
@@ -94,6 +94,11 @@ impl RBS3 {
         bucket: String,
         prefix: Option<String>,
     ) -> Result<Vec<String>, RBError> {
+        println!(
+            "Debug: listing files at bucket {}, prefix {}",
+            bucket,
+            prefix.as_ref().unwrap_or(&String::from("<no prefix>"))
+        );
         let mut params = ListObjectsV2Request {
             bucket,
             prefix: prefix.clone(),
@@ -174,7 +179,7 @@ impl RBS3 {
         key: String,
         dest_path: &Path,
     ) -> Result<(), RBError> {
-        println!("Debug; downloading bucket {} key {}", bucket, key);
+        println!("Debug: downloading bucket {} key {}", bucket, key);
         let params = GetObjectRequest {
             bucket,
             key: key.clone(),

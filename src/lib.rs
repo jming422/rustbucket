@@ -53,10 +53,9 @@ fn warn_if_more_words(mut words: Peekable<SplitWhitespace>) {
 // deal with the spaces problem
 fn parse_command(cmd_str: String) -> Result<Command, RBError> {
     let trimmed = cmd_str.trim();
-    let trimmed_lower = trimmed.to_lowercase();
-    let mut words = trimmed_lower.split_whitespace().peekable();
+    let mut words = trimmed.split_whitespace().peekable();
 
-    match words.next().unwrap_or("invalid") {
+    match words.next().unwrap_or("invalid").to_lowercase().as_str() {
         "exit" | "quit" => {
             warn_if_more_words(words);
             Err(RBError::new(ErrorKind::UserExit))
@@ -152,7 +151,8 @@ impl Runner {
                         key,
                     } = s3_path
                     {
-                        let files = self.s3.list_files(bucket, key).await?;
+                        let key_prefix = key.map(|k| k + "/");
+                        let files = self.s3.list_files(bucket, key_prefix).await?;
                         if files.is_empty() {
                             Ok(String::from("There are no files at this path.\n"))
                         } else {
@@ -244,15 +244,14 @@ impl Runner {
                                 .file_name()
                                 .unwrap_or(OsStr::new("unknown_s3_file")),
                         ))
-                    } else if non_canonical_path.is_file()
-                        || non_canonical_path
-                            .to_str()
-                            .map_or(false, |s| s.ends_with('/') || s.ends_with('\\'))
+                    } else if non_canonical_path.is_file() {
+                        return Err(RBError::new(ErrorKind::TargetAlreadyExists));
+                    } else if non_canonical_path
+                        .to_str()
+                        .map_or(false, |s| s.ends_with('/') || s.ends_with('\\'))
                     {
-                        // This means the path either:
-                        //   - points to a regular file that already exists, or
-                        //   - does not exist, but it ends in a slash, which means that the user expected it to be a
-                        //     directory
+                        // This means the path does not exist, but it ends in a slash, which means that the user
+                        // expected it to be a directory
                         return Err(RBError::new(ErrorKind::InvalidTarget));
                     } else {
                         // This means that the path does not exist on disk, and the user didn't end the path with a
@@ -285,7 +284,11 @@ impl Runner {
                         .file_name()
                         .ok_or(RBError::new(ErrorKind::Other))?; // This should never happen thanks to set_current_dir() earlier
 
-                    self.local_cwd.join(dest_filename)
+                    let dest_filepath = self.local_cwd.join(dest_filename);
+                    if dest_filepath.is_file() {
+                        return Err(RBError::new(ErrorKind::TargetAlreadyExists));
+                    }
+                    dest_filepath
                 };
 
                 // Okay, after all that, now we have finalized bucket, key, dest_path. Time to download!
@@ -315,6 +318,7 @@ impl Runner {
 
 static INVALID_COMMAND_WARNING: &str = "Unknown command. For available commands,";
 static INVALID_TARGET_WARNING: &str = "Invalid argument(s) for this command";
+static TARGET_EXISTS_WARNING: &str = "The specified file already exists, doing nothing";
 
 async fn run_loop(rl: &mut rustyline::Editor<()>, mut runner: Runner) -> Result<(), RBError> {
     loop {
@@ -335,6 +339,10 @@ async fn run_loop(rl: &mut rustyline::Editor<()>, mut runner: Runner) -> Result<
                             println!("{}", INVALID_TARGET_WARNING);
                             continue;
                         }
+                        ErrorKind::TargetAlreadyExists => {
+                            println!("{}", TARGET_EXISTS_WARNING);
+                            continue;
+                        }
                         _ => return Err(e),
                     };
                 }
@@ -345,6 +353,7 @@ async fn run_loop(rl: &mut rustyline::Editor<()>, mut runner: Runner) -> Result<
                     Err(e) => match e.kind() {
                         // TODO: Add better UX for "gracefully" handling S3 and IO error types
                         ErrorKind::InvalidTarget => println!("{}", INVALID_TARGET_WARNING),
+                        ErrorKind::TargetAlreadyExists => println!("{}", TARGET_EXISTS_WARNING),
                         _ => return Err(e),
                     },
                 };
@@ -371,6 +380,10 @@ pub async fn run(config: Config) -> Result<(), RBError> {
                 }
                 ErrorKind::InvalidTarget => {
                     eprintln!("{}", INVALID_TARGET_WARNING);
+                    Err(e)
+                }
+                ErrorKind::TargetAlreadyExists => {
+                    eprintln!("{}", TARGET_EXISTS_WARNING);
                     Err(e)
                 }
                 _ => Err(e),

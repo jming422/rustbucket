@@ -9,6 +9,7 @@ pub enum ErrorKind {
     Other,
     Readline,
     S3,
+    TargetAlreadyExists,
     UserExit,
 }
 
