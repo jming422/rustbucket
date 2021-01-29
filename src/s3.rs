@@ -151,7 +151,7 @@ impl RBS3 {
                 );
             };
 
-            // It's convenient to not use if let Some() here because params.continuation_token is also an Option
+            // It's convenient to not use `if let Some()` here because params.continuation_token is also an Option
             if output.next_continuation_token.is_some() {
                 params.continuation_token = output.next_continuation_token;
             // don't break; we'll loop and call the s3 function again with the new continuation token
