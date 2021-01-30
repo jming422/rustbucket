@@ -184,7 +184,7 @@ impl Runner {
                         io::ErrorKind::InvalidInput => {
                             Ok(format!("Invalid path: {}", new_path.display()))
                         }
-                        _ => Err(RBError::new_with_source(ErrorKind::IO, io_err)),
+                        _ => Err(RBError::wrap_io(io_err)),
                     },
                 }
             }
@@ -221,7 +221,7 @@ async fn run_loop(rl: &mut rustyline::Editor<()>, mut runner: Runner) -> Result<
         match rl.readline("> ") {
             Err(ReadlineError::Interrupted) => break,
             Err(ReadlineError::Eof) => break,
-            Err(e) => return Err(RBError::new_with_source(ErrorKind::IO, e)),
+            Err(e) => return Err(RBError::wrap_io(e)),
             Ok(line) => {
                 let cmd_res = parse_command(line);
                 if let Err(e) = cmd_res {

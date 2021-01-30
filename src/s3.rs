@@ -73,11 +73,7 @@ impl RBS3 {
     }
 
     pub async fn list_buckets(&self) -> Result<Vec<String>, RBError> {
-        let result = self
-            .client
-            .list_buckets()
-            .await
-            .map_err(|err| RBError::new_with_source(ErrorKind::S3, err))?;
+        let result = self.client.list_buckets().await.map_err(RBError::wrap_s3)?;
 
         let buckets: Vec<String> = result
             .buckets
@@ -114,7 +110,7 @@ impl RBS3 {
                 .client
                 .list_objects_v2(params.clone())
                 .await
-                .map_err(|err| RBError::new_with_source(ErrorKind::S3, err))?;
+                .map_err(RBError::wrap_s3)?;
 
             if let Some(prefixes) = output.common_prefixes {
                 results.extend(
@@ -173,34 +169,55 @@ impl RBS3 {
         Ok(results)
     }
 
+    pub async fn object_exists(&self, bucket: String, key: String) -> Result<bool, RBError> {
+        println!(
+            "Debug: Checking if file exists at bucket {}, key {}",
+            bucket, key
+        );
+        let params = ListObjectsV2Request {
+            bucket,
+            prefix: Some(key),
+            ..Default::default()
+        };
+
+        let output = self
+            .client
+            .list_objects_v2(params.clone())
+            .await
+            .map_err(RBError::wrap_s3)?;
+
+        Ok(output.key_count.map_or(false, |count| count != 0))
+    }
+
     pub async fn download_object(
         &self,
         bucket: String,
         key: String,
         dest_path: &Path,
     ) -> Result<(), RBError> {
-        println!("Debug: downloading bucket {} key {}", bucket, key);
+        println!(
+            "Debug: downloading bucket {} key {} to file {:?}",
+            bucket, key, dest_path
+        );
         let params = GetObjectRequest {
             bucket,
             key: key.clone(),
             ..Default::default()
         };
 
-        let mut dest_file = File::create(dest_path)
-            .await
-            .map_err(|err| RBError::new_with_source(ErrorKind::IO, err))?;
+        let mut dest_file = File::create(dest_path).await.map_err(RBError::wrap_io)?;
 
         let object = self
             .client
             .get_object(params)
             .await
-            .map_err(|err| RBError::new_with_source(ErrorKind::S3, err))?;
+            .map_err(RBError::wrap_s3)?;
 
         if let Some(body) = object.body {
             let mut object_stream = body.into_async_read();
             io::copy(&mut object_stream, &mut dest_file)
                 .await
-                .map_err(|err| RBError::new_with_source(ErrorKind::IO, err))?;
+                .map_err(RBError::wrap_io)?;
 
             Ok(())
         } else {

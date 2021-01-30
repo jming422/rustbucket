@@ -38,7 +38,7 @@ pub fn list_local_path(local_path: &Path) -> Result<String, RBError> {
             dirs.sort_unstable();
             Ok(dirs.join("\n"))
         })
-        .map_err(|e| RBError::new_with_source(ErrorKind::IO, e))
+        .map_err(RBError::wrap_io)
 }
 
 pub async fn get_file(
@@ -65,7 +65,7 @@ pub async fn get_file(
             // Awesome, this is the happy path!
             let dest_dir = non_canonical_path
                 .canonicalize()
-                .map_err(|io_err| RBError::new_with_source(ErrorKind::IO, io_err))?;
+                .map_err(RBError::wrap_io)?;
 
             dest_dir.join(Path::new(
                 source_path
@@ -92,7 +92,7 @@ pub async fn get_file(
                 // OK!
                 let dest_dir = path_without_filename
                     .canonicalize()
-                    .map_err(|io_err| RBError::new_with_source(ErrorKind::IO, io_err))?;
+                    .map_err(RBError::wrap_io)?;
 
                 dest_dir.join(Path::new(
                     non_canonical_path

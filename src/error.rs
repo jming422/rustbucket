@@ -20,16 +20,6 @@ pub struct RBError {
 }
 
 impl RBError {
-    pub fn new_with_source<E>(kind: ErrorKind, source_error: E) -> RBError
-    where
-        E: Into<Box<dyn Error + 'static>>,
-    {
-        RBError {
-            kind,
-            source_error: Some(source_error.into()),
-        }
-    }
-
     pub fn new(kind: ErrorKind) -> RBError {
         RBError {
             kind,
@@ -39,6 +29,28 @@ impl RBError {
 
     pub fn kind(&self) -> ErrorKind {
         self.kind
+    }
+
+    // These "wrap" functions reduce duplicate code in the common `.map_err(|err| please_turn_this_into_rb_error(err))`
+    // type situations
+    pub fn wrap_s3<E>(err: E) -> Self
+    where
+        E: Into<Box<dyn Error + 'static>>,
+    {
+        RBError {
+            kind: ErrorKind::S3,
+            source_error: Some(err.into()),
+        }
+    }
+
+    pub fn wrap_io<E>(err: E) -> Self
+    where
+        E: Into<Box<dyn Error + 'static>>,
+    {
+        RBError {
+            kind: ErrorKind::IO,
+            source_error: Some(err.into()),
+        }
     }
 }
 
