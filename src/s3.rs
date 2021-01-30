@@ -3,8 +3,10 @@ use crate::error::{ErrorKind, RBError};
 use std::default::Default;
 use std::path::{Component, Path};
 
-use rusoto_s3::{GetObjectRequest, ListObjectsV2Request, S3Client, S3};
+use rusoto_core::ByteStream;
+use rusoto_s3::{GetObjectRequest, ListObjectsV2Request, PutObjectRequest, S3Client, S3};
 use tokio::{fs::File, io};
+use tokio_util::io::ReaderStream;
 
 pub struct S3Path {
     pub bucket: Option<String>,
@@ -224,5 +226,33 @@ impl RBS3 {
             eprintln!("Object at key {} has no body!", key);
             Err(RBError::new(ErrorKind::S3))
         }
+    }
+
+    pub async fn upload_object(
+        &self,
+        bucket: String,
+        key: String,
+        source_path: &Path,
+    ) -> Result<(), RBError> {
+        println!(
+            "Debug: uploading file {:?} to bucket {} key {}",
+            source_path, bucket, key
+        );
+
+        let src_file = File::open(source_path).await.map_err(RBError::wrap_io)?;
+
+        let params = PutObjectRequest {
+            bucket,
+            key,
+            body: Some(ByteStream::new(ReaderStream::new(src_file))),
+            ..Default::default()
+        };
+
+        self.client
+            .put_object(params)
+            .await
+            .map_err(RBError::wrap_s3)?;
+
+        Ok(())
     }
 }

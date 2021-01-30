@@ -205,8 +205,14 @@ impl Runner {
                 local_source,
                 remote_destination,
             } => {
-                // todo impl
-                Ok(String::from("ok"))
+                commands::put_file(
+                    &self.s3,
+                    &self.remote_cwd,
+                    &self.local_cwd,
+                    local_source,
+                    remote_destination,
+                )
+                .await
             }
         }
     }

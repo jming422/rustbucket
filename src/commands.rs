@@ -132,3 +132,54 @@ pub async fn get_file(
         dest_path.display()
     ))
 }
+
+pub async fn put_file(
+    s3: &RBS3,
+    remote_cwd: &Path,
+    local_cwd: &Path,
+    local_source: &String,
+    remote_destination: &Option<String>,
+) -> Result<String, RBError> {
+    let src_path = local_cwd
+        .join(local_source)
+        .canonicalize()
+        .map_err(RBError::wrap_io)?;
+
+    if !src_path.is_file() {
+        return Err(RBError::new(ErrorKind::InvalidTarget));
+    }
+
+    let dest_path = if let Some(remote_dir) = remote_destination {
+        remote_cwd.join(remote_dir).clean()
+    } else {
+        remote_cwd
+            .join(Path::new(
+                // Because of the is_file validation on src_path above, we know this path is guaranteed to have a file
+                // name
+                src_path.file_name().unwrap(),
+            ))
+            .clean()
+    };
+    let s3_path = S3Path::try_from_path(&dest_path)?;
+    if !s3_path.has_key_and_bucket() {
+        return Err(RBError::new(ErrorKind::InvalidTarget));
+    }
+
+    let bucket = s3_path.bucket.unwrap();
+    let key = s3_path.key.unwrap();
+
+    if s3.object_exists(bucket.clone(), key.clone()).await? {
+        return Err(RBError::new(ErrorKind::TargetAlreadyExists));
+    }
+
+    // Okay, after all that, now we have finalized bucket, key, src_path. Time to upload!
+    println!(
+        "Uploading file '{}'...",
+        src_path.file_name().unwrap().to_string_lossy()
+    );
+    s3.upload_object(bucket, key, &src_path).await?;
+    Ok(format!(
+        "File uploaded successfully: {}",
+        dest_path.display()
+    ))
+}
