@@ -228,7 +228,7 @@ impl RBS3 {
         }
     }
 
-    pub async fn upload_object(
+    pub async fn put_object(
         &self,
         bucket: String,
         key: String,

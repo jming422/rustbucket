@@ -177,7 +177,7 @@ pub async fn put_file(
         "Uploading file '{}'...",
         src_path.file_name().unwrap().to_string_lossy()
     );
-    s3.upload_object(bucket, key, &src_path).await?;
+    s3.put_object(bucket, key, &src_path).await?;
     Ok(format!(
         "File uploaded successfully: {}",
         dest_path.display()
