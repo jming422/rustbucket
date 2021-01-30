@@ -1,5 +1,6 @@
 use crate::error::{ErrorKind, RBError};
 
+use std::convert::TryFrom;
 use std::default::Default;
 use std::path::{Component, Path};
 
@@ -241,10 +242,14 @@ impl RBS3 {
 
         let src_file = File::open(source_path).await.map_err(RBError::wrap_io)?;
 
+        let file_meta = src_file.metadata().await.map_err(RBError::wrap_io)?;
+        let file_size: i64 = TryFrom::try_from(file_meta.len()).map_err(RBError::wrap_io)?;
+
         let params = PutObjectRequest {
             bucket,
             key,
             body: Some(ByteStream::new(ReaderStream::new(src_file))),
+            content_length: Some(file_size),
             ..Default::default()
         };
 
