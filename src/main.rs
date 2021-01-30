@@ -33,7 +33,7 @@ async fn main() {
                 .short("c")
                 .empty_values(false)
                 .value_name("COMMAND")
-                .help("Execute a command instead of opening interactive prompt"),
+                .help("Execute a one-off command instead of opening interactive prompt"),
         )
         .get_matches();
 
