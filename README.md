@@ -1,4 +1,4 @@
-# Rustbucket
+# Rustbucket [WIP side project, not finished]
 Navigate AWS S3 buckets in an FTP-like, greppable CLI
 
 
